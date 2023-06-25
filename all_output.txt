@@ -1,0 +1,244 @@
+Let's start by laying out the core classes, functions, and methods necessary for this project:
+
+1. `server.js`: This is the entry point of the application. It will set up the Express server, import the necessary routes, and listen on port 8000.
+2. `routes.js`: This file will contain the routes for the CRUD API and the UI.
+3. `todoController.js`: This file will contain the controller functions for handling the CRUD operations on the todos.
+4. `todoModel.js`: This file will contain the Todo class and methods for interacting with the JSON file on the local filesystem.
+5. `public/index.html`: This file will contain the HTML for the UI.
+6. `public/styles.css`: This file will contain the CSS styles for the UI.
+7. `public/scripts.js`: This file will contain the JavaScript for handling the UI interactions with the CRUD API.
+8. `package.json`: This file will contain the project's dependencies and scripts.
+
+Now let's create the content of each file:
+
+server.js
+```javascript
+const express = require('express');
+const app = express();
+const routes = require('./routes');
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
+app.use('/', routes);
+
+const PORT = process.env.PORT || 8000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+```
+
+routes.js
+```javascript
+const express = require('express');
+const router = express.Router();
+const todoController = require('./todoController');
+
+router.get('/todos', todoController.getAllTodos);
+router.post('/todos', todoController.createTodo);
+router.put('/todos/:id', todoController.updateTodo);
+router.delete('/todos/:id', todoController.deleteTodo);
+
+router.get('/', (req, res) => {
+  res.sendFile('index.html', { root: './public' });
+});
+
+module.exports = router;
+```
+
+todoController.js
+```javascript
+const Todo = require('./todoModel');
+
+exports.getAllTodos = async (req, res) => {
+  try {
+    const todos = await Todo.getAll();
+    res.json(todos);
+  } catch (error) {
+    res.status(500).json({ message: 'Error retrieving todos' });
+  }
+};
+
+exports.createTodo = async (req, res) => {
+  try {
+    const todo = new Todo(req.body);
+    await todo.save();
+    res.status(201).json(todo);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating todo' });
+  }
+};
+
+exports.updateTodo = async (req, res) => {
+  try {
+    const todo = await Todo.update(req.params.id, req.body);
+    res.json(todo);
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating todo' });
+  }
+};
+
+exports.deleteTodo = async (req, res) => {
+  try {
+    await Todo.delete(req.params.id);
+    res.status(204).json({ message: 'Todo deleted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting todo' });
+  }
+};
+```
+
+todoModel.js
+```javascript
+const fs = require('fs').promises;
+const path = require('path');
+const FILE_PATH = path.join(__dirname, 'todos.json');
+
+class Todo {
+  constructor({ id, title, completed }) {
+    this.id = id;
+    this.title = title;
+    this.completed = completed;
+  }
+
+  static async getAll() {
+    try {
+      const data = await fs.readFile(FILE_PATH, 'utf8');
+      return JSON.parse(data);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  async save() {
+    const todos = await Todo.getAll();
+    this.id = todos.length + 1;
+    todos.push(this);
+    await fs.writeFile(FILE_PATH, JSON.stringify(todos, null, 2));
+  }
+
+  static async update(id, data) {
+    const todos = await Todo.getAll();
+    const index = todos.findIndex(todo => todo.id === parseInt(id));
+    if (index === -1) {
+      throw new Error('Todo not found');
+    }
+    todos[index] = { ...todos[index], ...data };
+    await fs.writeFile(FILE_PATH, JSON.stringify(todos, null, 2));
+    return todos[index];
+  }
+
+  static async delete(id) {
+    const todos = await Todo.getAll();
+    const index = todos.findIndex(todo => todo.id === parseInt(id));
+    if (index === -1) {
+      throw new Error('Todo not found');
+    }
+    todos.splice(index, 1);
+    await fs.writeFile(FILE_PATH, JSON.stringify(todos, null, 2));
+  }
+}
+
+module.exports = Todo;
+```
+
+public/index.html
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todo App</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1>Todo App</h1>
+  <form id="todo-form">
+    <input type="text" id="todo-input" placeholder="Enter a new todo">
+    <button type="submit">Add</button>
+  </form>
+  <ul id="todo-list"></ul>
+  <script src="scripts.js"></script>
+</body>
+</html>
+```
+
+public/styles.css
+```css
+body {
+  font-family: Arial, sans-serif;
+}
+
+form {
+  display: flex;
+  margin-bottom: 1rem;
+}
+
+input {
+  flex-grow: 1;
+  padding: 0.5rem;
+  margin-right: 0.5rem;
+}
+
+button {
+  padding: 0.5rem;
+}
+
+li {
+  margin-bottom: 0.5rem;
+}
+```
+
+public/scripts.js
+```javascript
+const todoForm = document.getElementById('todo-form');
+const todoInput = document.getElementById('todo-input');
+const todoList = document.getElementById('todo-list');
+
+todoForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const title = todoInput.value.trim();
+  if (!title) return;
+  const response = await fetch('/todos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, completed: false }),
+  });
+  const todo = await response.json();
+  addTodoToList(todo);
+  todoInput.value = '';
+});
+
+async function fetchTodos() {
+  const response = await fetch('/todos');
+  const todos = await response.json();
+  todos.forEach(addTodoToList);
+}
+
+function addTodoToList(todo) {
+  const li = document.createElement('li');
+  li.textContent = todo.title;
+  todoList.appendChild(li);
+}
+
+fetchTodos();
+```
+
+package.json
+```json
+{
+  "name": "todo-app",
+  "version": "1.0.0",
+  "description": "A simple todo app using Node.js and Express",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1"
+  }
+}
+```
+
+To run the application, first install the dependencies with `npm install`, and then start the server with `npm start`. The website will be available at `http://localhost:8000`.
